@@ -5,7 +5,7 @@ COMPILE        = -Wall -Wpedantic -Werror -Wextra
 CC             = clang
 REMOVE         = rm -f 
 
-httpserver : httpserver.o $(BASE_OBJECTS)
+all : httpserver.o $(BASE_OBJECTS)
 	$(CC) -o httpserver httpserver.o $(BASE_OBJECTS)
 
 httpserver.o : $(BASE_SOURCES) $(HEADERS)
