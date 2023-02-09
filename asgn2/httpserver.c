@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -9,11 +10,14 @@
 #include <fcntl.h>
 #include <arpa/inet.h>
 #include <regex.h>
+
 #include "asgn2_helper_funcs.h"
 
+#define MAX_REQUEST 2048
 #define MAX_BUF 4096
+#define MAX_RESPONSE 200 // since the longest resonse without message could have max 185 bytes, using 200 just to be careful
+#define MAX_PHRASE 22 // since the longest status phrase has 22 bytes
 
-//#define SEP "([^\\r\\n]+)" // Command seperation \r\n
 ////// Request Line Regex
 #define METHOD "([a-zA-Z]{1,8})" // character range [a-zA-Z] at most 8 characters
 #define URI "([a-zA-Z][a-zA-Z0-9.-]{1,63})" // characte range [a-zA-Z0-9.-] and at least 2 characters and at most 64 characters
@@ -21,60 +25,76 @@
 #define VERSIONY "([0-9])"
 #define REQUEST_LINE "^"METHOD " ""/" URI " HTTP/" VERSIONX "." VERSIONY
 
-// @param filename: the name of the file we're reading from
+////// Header-field Regex
+#define HEADER_FIELD "(([a-zA-Z0-9.-]{1,128})([:]{1})([ -~]{1,128}))" 
+
+// global value for status code and phrases
+enum StatusCode {
+    Ok = 200,
+    Created = 201,
+    Bad_Request = 400,
+    Forbidden = 403,
+    Not_Found = 404,
+    Internal_Server_Error = 500,
+    Not_Implemented = 501,
+    Version_Not_Supported = 505,
+};
+
+static const char * const StatusPhrase[] = {
+    [Ok] = "OK",
+    [Created] = "Created",
+    [Bad_Request] = "Bad Request",
+    [Forbidden] = "Forbidden",
+    [Not_Found] = "Not Found",
+    [Internal_Server_Error] = "Internal Server Error",
+    [Not_Implemented] = "Not Implemented",
+    [Version_Not_Supported] = "Version Not Supported"
+};
+
 // @param socket_fd: the socket we're writting to
+// @param file_fd: the file we're reading from
 // @return: nothing at the moment
-// get retrieves data in filename and output it to socket_fd
+// @usage: get retrieves data in filename and output it to socket_fd
 // closes filename when exit, but not socket_fd
-void get(char *filename, int socket_fd) {
+void get(int file_fd, int socket_fd) {
     char buff[MAX_BUF];
-    int n = 0;
-    int file_fd = open(filename, O_RDONLY);
-
-    // status code 403
-    if (file_fd < 0) {
-        fprintf(stderr, "Invalid Command\n");
-        exit(1);
-    }
-
     int bytes_read = 0;
+    int n;
 
     // since read_until terminates when buf contains NULL or reaches EOF
     // or MAX_BUF bytes is read
-    bytes_read = read_until(file_fd, buff, MAX_BUF, NULL);
-    if (bytes_read < 0 || errno != 0) {
-        fprintf(stderr, "%s\n", strerror(errno));
-        fprintf(stderr, "can't read from socket\n");
-        exit(1);
-    }
+    do {
+        bytes_read = read_until(file_fd, buff, MAX_BUF, NULL);
+        if (bytes_read < 0 || errno != 0) {
+            fprintf(stderr, "%s\n", strerror(errno));
+            fprintf(stderr, "can't read from socket\n");
+            exit(1);
+        }
 
-    n = write_all(socket_fd, buff, strlen(buff));
-    if (n < 0 || errno != 0) {
-        fprintf(stderr, "%s\n", strerror(errno));
-        fprintf(stderr, "can't write to socket\n");
-        exit(1);
-    }
-    close(file_fd);
+        n = write_all(socket_fd, buff, bytes_read);
+        if (n < 0 || errno != 0) {
+            fprintf(stderr, "%s\n", strerror(errno));
+            fprintf(stderr, "can't write to socket\n");
+            exit(1);
+        }
+        bzero(buff, MAX_BUF);
+    }while(bytes_read > 0);
 }
 
 // @param filename: the name of the file we're reading from
 // @param socket_fd: the socket we're reading from
 // @return: nothing at the moment
-// put what we read from socket_fd into filename
+// @usage: put what we read from socket_fd into filename
 // closes filename when exit, but not socket_fd
-void put(char *filename, int socket_fd) {
+void put(int file_fd, int socket_fd) {
     char buff[MAX_BUF];
-    int file_fd;
     int bytes_wrote;
     int n;
 
-    // open file as: if filename doesn't exist, create a file and user have R,W,E permission
-    // if exist, write only, and non_empty then truncate file to length 0
-    // if exist and empty, then write only
-    file_fd = open(filename, O_CREAT | O_WRONLY | O_TRUNC, S_IRWXU);
     do {
         // clear buff
         bzero(buff, MAX_BUF);
+        //fprintf(stdout, "%.*s\n", 4096, buf);
         n = read_until(socket_fd, buff, MAX_BUF, NULL);
         if (n < 0 || errno != 0) {
             fprintf(stderr, "%s\n", strerror(errno));
@@ -90,7 +110,39 @@ void put(char *filename, int socket_fd) {
         }
 
     } while (n > 0);
-    close(file_fd);
+}
+
+// @param socket_fd: the socket file descripter we're writing to
+// @param vx & vy: the version number HTTP/vx.vy
+// @param code: the status code
+// @param length: the length of status phrase or the number of bytes in the file if it's a valid GET
+// @usage: sends a response to socket_fd
+// returns: nothing
+void sending_message(int socket_fd, int vx, int vy, int code, int length){
+    char buffer[MAX_RESPONSE];
+    int n;
+    if (code == 200) {
+        n = sprintf(buffer, "HTTP/%d.%d %d %.*s\r\nContent-Length: %d\r\n\r\n", vx, vy, code, length, StatusPhrase[code], length);
+    }else{
+        n = sprintf(buffer, "HTTP/%d.%d %d %.*s\r\nContent-Length: %d\r\n\r\n%.*s\n", vx, vy, code, MAX_PHRASE, StatusPhrase[code], length, MAX_PHRASE, StatusPhrase[code]);
+    }
+    if (n < 0) {
+        fprintf(stderr, "can't write to buffer in sending_message\n");
+        exit(1);
+    }
+    write_all(socket_fd, buffer, n);
+}
+
+// @param buf: buffer that might contain the double \r\n
+// @usage: check if the buffer contains \r\n\r\n
+// @return: true if buffer contain \r\n\r\n else false
+bool check_header(char *buf) {
+    char *ret = strstr(buf, "\r\n\r\n");
+    if (ret == NULL) {
+        return false;
+    }else {
+        return true;
+    }
 }
 
 int main(int argc, char **argv) {
@@ -98,7 +150,11 @@ int main(int argc, char **argv) {
     //struct sockaddr_in server_addr;
     int port;
     errno = 0;
-    char buf[MAX_BUF];
+    char buf[MAX_REQUEST];
+    int Status_Code;
+    int file_fd;
+
+    bool header = false; // keep tracks if we have header
 
     // checking usage
     if (argc != 2) {
@@ -121,23 +177,36 @@ int main(int argc, char **argv) {
     // the server runs forever until terminated by ctrl-c
     while (1) {
         int new_socket_fd;
+        errno = 0;
         // Blocks until a new client connection
         new_socket_fd = listener_accept(&socket_fd);
-        bzero(buf, MAX_BUF);
+        bzero(buf, MAX_REQUEST);
 
         // getting client input
         int n;
-        n = read_until(new_socket_fd, buf, MAX_BUF, NULL);
+        n = read_until(new_socket_fd, buf, MAX_REQUEST, "\r\n\r\n");
         if (n < 0 || errno != 0) {
+        /*
             fprintf(stderr, "%s\n", strerror(errno));
-            fprintf(stderr, "can't read from socket\n");
-            return 1;
+            fprintf(stderr, "cannot read from socket\n");
+          */  
+            Status_Code = 500;
+            sending_message(new_socket_fd, 1, 1, Status_Code, 22);
+            close(new_socket_fd);
+            continue;
         }
- 
+
+        // checks if we found header
+        header = check_header(buf);
+        
+        //////////////////////////////Parsing Request Line //////////////////////////
         // parsing buf with no \r\n included
         int len = strcspn(buf, "\r\n");
-        buf[len] = 0;
+        // saving the extra bytes just incase
+        char buf_rest[MAX_REQUEST];
+        strncpy(buf_rest, buf + len + 2, MAX_REQUEST - len);
 
+        buf[len] = 0;
                 
         // creating new regular expression for request_line
         regex_t req;
@@ -146,11 +215,16 @@ int main(int argc, char **argv) {
 
         req_r = regcomp(&req, REQUEST_LINE, REG_EXTENDED);
         if (req_r) {
+        /*
             char msgbuf[2048];
             regerror(req_r, &req, msgbuf, sizeof(msgbuf));
             fprintf(stderr, "Regex match failed: %s\n", msgbuf);
             fprintf(stderr, "cannot compile regular expressin with REQUEST_LINE\n");
-            return 1;
+            */
+            Status_Code = 500;
+            sending_message(new_socket_fd, 1, 1, Status_Code, 22);
+            close(new_socket_fd);
+            continue;
         }
         
         // check if parsed buffer matches the Method URI Version format
@@ -159,7 +233,10 @@ int main(int argc, char **argv) {
         if (req_r) {
             fprintf(stderr, "No matches found\n");
             regfree(&req);
-            return 1;
+            Status_Code = 400;
+            sending_message(new_socket_fd, 1, 1, Status_Code, 12);
+            close(new_socket_fd);
+            continue;
         }
 
         // retrieving method from request line
@@ -180,14 +257,110 @@ int main(int argc, char **argv) {
         VerX = atoi(&buf[VerX_start]);
         int VerY_start = req_line[4].rm_so;
         VerY = atoi(&buf[VerY_start]);
+
+        if (!(VerX == 1) && !(VerY == 1)) {
+            Status_Code = 505;
+            sending_message(new_socket_fd, 1, 1, Status_Code, 22);
+            close(new_socket_fd);
+            continue;
+        }
         regfree(&req);
+        
+        /////////////////////////// Processing Request////////////////////////////
+   
+        if (strcmp(method, "GET") == 0) {
+            
+            file_fd = open(uri, O_RDONLY);
+            // checks why can't we access the file
+            if (file_fd < 0) {
+                // file doens't exist?
+                if (access(uri, F_OK)) {
+                    Status_Code = 404;
+                    sending_message(new_socket_fd, 1, 1, Status_Code, 10);
+                    close(new_socket_fd);
+                    continue;
+                // we don't have permsision
+                }else{
+                    Status_Code = 403;
+                    sending_message(new_socket_fd, 1, 1, Status_Code, 10);
+                    close(new_socket_fd);
+                    continue;
+                }
+            }
+            
+            while (!header) {
+                bzero(buf, MAX_REQUEST);
+                n = read_until(new_socket_fd, buf, MAX_REQUEST, "\r\n\r\n");
+                header = check_header(buf);
+                if (!header && n < MAX_REQUEST) {
+                    Status_Code = 400;
+                    sending_message(new_socket_fd, 1, 1, Status_Code, 12);
+                    close(new_socket_fd);
+                    close(file_fd);
+                    continue;
+                }
+            }
 
- 
+            Status_Code = 200;
+            struct stat st;
+            fstat(file_fd,&st); 
+            sending_message(new_socket_fd, 1, 1, Status_Code, st.st_size); 
+            get(file_fd, new_socket_fd);
+            close(file_fd);
+            close(new_socket_fd);
+        }else if (strcmp(method, "PUT") == 0) {
 
+            // open file as: if filename doesn't exist, create a file and user have R,W,E permission
+            // if exist, write only, and non_empty then truncate file to length 0
+            // if exist and empty, then write only
+            file_fd = open(uri, O_WRONLY | O_TRUNC);
+            
+            // checks if we can't access the file
+            if (file_fd < 0) {
+                if (access(uri, W_OK | X_OK)) {
+                    Status_Code = 403;
+                    sending_message(new_socket_fd, 1, 1, Status_Code, 10);
+                    close(new_socket_fd);
+                    continue;
+                }
+            }
+            
+            file_fd = open(uri, O_CREAT, S_IRWXU);
+            
+            // can't create a new file
+            if (file_fd < 0) {
+
+             //   fprintf(stderr, "Invalid Command\n");
+                Status_Code = 500;
+                sending_message(new_socket_fd, 1, 1, Status_Code, 22);
+                close(new_socket_fd);
+                continue;
+            }
+
+            //////////// Parsing for Header-Field //////////////////
+
+           char* token = strtok(buf_rest, "\r\n");
+           if (token == NULL) {
+               printf("not done yet");
+           }else {
+               printf("%s\n", token);
+           }
+
+            close(file_fd);
+            close(new_socket_fd);
+
+        // when the command is something other than GET or PUT
+        }else {
+            Status_Code = 501;
+            sending_message(new_socket_fd, 1, 1, Status_Code, 16);
+            close(new_socket_fd);
+        
+        }
+/*
 
         printf("Method: %.*s\n", (int)sizeof(method), method);
         printf("URI: %.*s\n", (int)sizeof(uri), uri);
-        printf("Version: %d.%d\n", VerX, VerY);
+ */      
 
         ///////////// GET ////////////////////////////
         //        get("medium_ascii.txt", new_socket_fd);
@@ -195,7 +368,7 @@ int main(int argc, char **argv) {
         //////////// PUT /////////////////////////////
 
         //        put("test.txt", new_socket_fd);
-        close(new_socket_fd);
+        
     }
     return 0;
 }
