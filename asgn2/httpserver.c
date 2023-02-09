@@ -20,13 +20,16 @@
 
 ////// Request Line Regex
 #define METHOD "([a-zA-Z]{1,8})" // character range [a-zA-Z] at most 8 characters
-#define URI "([a-zA-Z][a-zA-Z0-9.-]{1,63})" // characte range [a-zA-Z0-9.-] and at least 2 characters and at most 64 characters
+#define URI "([a-zA-Z0-9.-]{1,63})" // characte range [a-zA-Z0-9.-] and at least 2 characters and at most 64 characters
 #define VERSIONX "([0-9])" // HTTP/VERSIONX.VERSIONY
 #define VERSIONY "([0-9])"
 #define REQUEST_LINE "^"METHOD " ""/" URI " HTTP/" VERSIONX "." VERSIONY
 
 ////// Header-field Regex
-#define HEADER_FIELD "(([a-zA-Z0-9.-]{1,128})([:]{1})([ -~]{1,128}))" 
+#define KEY "([a-zA-Z0-9.-]{1,128})" // character range words, numbers, . and -
+#define VALUE "([ -~]{1,128})" // any ascii character
+#define COLON "([:]{1})"
+#define HEADER_FIELD "^" KEY COLON VALUE 
 
 // global value for status code and phrases
 enum StatusCode {
@@ -145,6 +148,31 @@ bool check_header(char *buf) {
     }
 }
 
+/*
+bool parsing_header(char *buf) {
+    regex_t req;
+    int req_r;
+    regmatch_t req_line[3];
+    
+    req_r = regcomp(&req, HEADER_FIELD, REG_EXTENDED);
+    if (req_r){
+        printf("can't comp\n");
+        return 1;
+    }
+    
+    char *token = strtok(buff, "\r\n");
+    while (token != NULL){
+        req_r = regexec(&req, token, 3, req_line, 0);
+        if (req_r == 0){
+            printf("matched!\n");
+        }else{
+            printf("no matches\n");
+        }
+        token = strtok(NULL, "\r\n");
+        //printf("token: %s\n", token);
+    }
+}
+*/
 int main(int argc, char **argv) {
     Listener_Socket socket_fd;
     //struct sockaddr_in server_addr;
@@ -231,7 +259,7 @@ int main(int argc, char **argv) {
         req_r = regexec(&req, buf, 5, req_line, 0);
             // no matches found, should return status 400
         if (req_r) {
-            fprintf(stderr, "No matches found\n");
+            //fprintf(stderr, "No matches found\n");
             regfree(&req);
             Status_Code = 400;
             sending_message(new_socket_fd, 1, 1, Status_Code, 12);
@@ -258,7 +286,7 @@ int main(int argc, char **argv) {
         int VerY_start = req_line[4].rm_so;
         VerY = atoi(&buf[VerY_start]);
 
-        if (!(VerX == 1) && !(VerY == 1)) {
+        if (!(VerX == 1&& VerY == 1)) {
             Status_Code = 505;
             sending_message(new_socket_fd, 1, 1, Status_Code, 22);
             close(new_socket_fd);
@@ -288,6 +316,36 @@ int main(int argc, char **argv) {
                 }
             }
             
+/*            // compiling regex for header-field
+            regex_t head;
+            int head_r;
+            head_r = regcomp(&head, HEADER_FIELD, REG_EXTENDED);
+            if (head_r) {
+            //fprintf(stderr, "No matches found\n");
+                Status_Code = 500;
+                sending_message(new_socket_fd, 1, 1, Status_Code, 22);
+                close(file_fd);
+                close(new_socket_fd);
+                continue;
+            }
+
+
+            char *token = strtok(buf_rest, "\r\n");
+            while(token != NULL) {
+                head_r = regexec(&head, token, 0, NULL, 0);
+                token = strtok(NULL, "\r\n");
+                // means no matches
+                // the header-field is not properly formatted
+                if (req_r){
+                    Status_Code = 400;
+                    sending_message(new_socket_fd, 1, 1, Status_Code, 12);
+                    close(new_socket_fd);
+                    close(file_fd);
+                    continue;
+                }
+                
+            }
+*/
             while (!header) {
                 bzero(buf, MAX_REQUEST);
                 n = read_until(new_socket_fd, buf, MAX_REQUEST, "\r\n\r\n");
@@ -322,33 +380,174 @@ int main(int argc, char **argv) {
                     sending_message(new_socket_fd, 1, 1, Status_Code, 10);
                     close(new_socket_fd);
                     continue;
-                }
-            }
+                }else{
+                    file_fd = open(uri, O_CREAT, S_IRWXU);
             
-            file_fd = open(uri, O_CREAT, S_IRWXU);
-            
-            // can't create a new file
-            if (file_fd < 0) {
+                    // can't create a new file
+                    if (file_fd < 0) {
 
-             //   fprintf(stderr, "Invalid Command\n");
+                    //   fprintf(stderr, "Invalid Command\n");
+                        Status_Code = 500;
+                        sending_message(new_socket_fd, 1, 1, Status_Code, 22);
+                        close(new_socket_fd);
+                        continue;
+                    }
+                    Status_Code = 201;
+                }
+            }else{
+                Status_Code = 200;
+            }
+
+
+            //////////// Parsing for Header-Field //////////////////
+
+            regex_t head;
+            int head_r;
+
+            head_r = regcomp(&head, HEADER_FIELD, REG_EXTENDED);
+            if (head_r) {
                 Status_Code = 500;
                 sending_message(new_socket_fd, 1, 1, Status_Code, 22);
                 close(new_socket_fd);
                 continue;
             }
 
-            //////////// Parsing for Header-Field //////////////////
+            // see if header exist    
+            header = check_header(buf_rest);
+            char header_buf[MAX_BUF];
+            char *found;
+            if (header) {
+                // tranfer header-fields
+                char *temp = strstr(buf_rest, "\r\n\r\n");
+                sprintf(header_buf, "%.*s", (int)(strlen(buf_rest) - strlen(temp)), buf_rest);
+                // checking header-field
+                char *token = strtok(header_buf, "\r\n");
+                while(token != NULL) {
+                    head_r = regexec(&head, token, 0, NULL, 0);
+                    token = strtok(NULL, "\r\n");
+                    // means no matches
+                    // the header-field is not properly formatted
+                    if (req_r){
+                        Status_Code = 400;
+                        sending_message(new_socket_fd, 1, 1, Status_Code, 12);
+                        close(new_socket_fd);
+                        close(file_fd);
+                        continue;
+                    }else{
+                        // we found content-length!
+                        found = strstr(token, "Content-Length");
+                        if (found) {
+                            int Length;
+                            sscanf(found, "%*[^0123456789]%d", &Length);
+                        }
+                    }
 
-           char* token = strtok(buf_rest, "\r\n");
-           if (token == NULL) {
-               printf("not done yet");
-           }else {
-               printf("%s\n", token);
-           }
+                }
+                // all header-field is verified
+                temp = strtok(buf_rest, "\r\n\r\n");
+                temp = strtok(NULL, "\r\n\r\n");
+                // if there's something left
+                // those are messages, write to file_fd
+                if (temp) {
+                    write_all(file_fd, temp, strlen(temp));
+                }
+                // writes the rest of messages if there are any more messages
+                put(file_fd, new_socket_fd);
+                if (found) {
+                    sending_message(new_socket_fd, 1, 1, Status_Code, strlen(StatusPhrase[Status_Code]));
+                }else{
+                    Status_Code = 400;
+                    sending_message(new_socket_fd, 1, 1, Status_Code, 12);
+                }
+                close(file_fd);
+                close(new_socket_fd);
+            
+            // if header wasn't found yet
+            }else{
+                 // regexing the buf_rest since all of them are header-field
+                 char *token = strtok(buf_rest, "\r\n");
+                 char *found;
+                 while(token != NULL) {
+                    head_r = regexec(&head, token, 0, NULL, 0);
+                    token = strtok(NULL, "\r\n");
+                    // means no matches
+                    // the header-field is not properly formatted
+                    if (req_r){
+                        Status_Code = 400;
+                        sending_message(new_socket_fd, 1, 1, Status_Code, 12);
+                        close(new_socket_fd);
+                        close(file_fd);
+                        continue;
+                    }else{
+                        // we found content-length!
+                        found = strstr(token, "Content-Length");
+                        if (found) {
+                            int Length;
+                            sscanf(found, "%*[^0123456789]%d", &Length);
+                        }
+                    }
 
-            close(file_fd);
-            close(new_socket_fd);
+                }
+                while (!header) {
+                    bzero(buf, MAX_REQUEST);
+                    n = read_until(new_socket_fd, buf, MAX_REQUEST, "\r\n\r\n");
+                    header = check_header(buf);
+                    if (!header && n < MAX_REQUEST) {
+                        Status_Code = 400;
+                        sending_message(new_socket_fd, 1, 1, Status_Code, 12);
+                        close(new_socket_fd);
+                        close(file_fd);
+                        continue;
+                    }
+               }
+               // header found
+               char header_buf[MAX_BUF];
+               char *temp = strstr(buf_rest, "\r\n\r\n");
+                sprintf(header_buf, "%.*s", (int)(strlen(buf_rest) - strlen(temp)), buf_rest);
 
+                token = strtok(header_buf, "\r\n");
+                while(token != NULL) {
+                    head_r = regexec(&head, token, 0, NULL, 0);
+                    token = strtok(NULL, "\r\n");
+                    // means no matches
+                    // the header-field is not properly formatted
+                    if (req_r){
+                        Status_Code = 400;
+                        sending_message(new_socket_fd, 1, 1, Status_Code, 12);
+                        close(new_socket_fd);
+                        close(file_fd);
+                        continue;
+                    }else{
+                        // we found content-length!
+                        found = strstr(token, "Content-Length");
+                        if (found) {
+                            int Length;
+                            sscanf(found, "%*[^0123456789]%d", &Length);
+                        }
+                    }
+
+                }
+
+                temp = strtok(buf, "\r\n\r\n");
+                temp = strtok(NULL, "\r\n\r\n");
+                // if there's something left
+                // those are messages, write to file_fd
+                if (temp) {
+                    write_all(file_fd, temp, strlen(temp));
+                }
+                // writes the rest of messages if there are any more messages
+                put(file_fd, new_socket_fd);
+                if (found) {
+                    sending_message(new_socket_fd, 1, 1, Status_Code, strlen(StatusPhrase[Status_Code]));
+                }else{
+                    Status_Code = 400;
+                    sending_message(new_socket_fd, 1, 1, Status_Code, 12);
+                }
+                close(file_fd);
+                close(new_socket_fd);
+
+            }
+          
         // when the command is something other than GET or PUT
         }else {
             Status_Code = 501;
@@ -356,19 +555,7 @@ int main(int argc, char **argv) {
             close(new_socket_fd);
         
         }
-/*
-
-        printf("Method: %.*s\n", (int)sizeof(method), method);
-        printf("URI: %.*s\n", (int)sizeof(uri), uri);
- */      
-
-        ///////////// GET ////////////////////////////
-        //        get("medium_ascii.txt", new_socket_fd);
-
-        //////////// PUT /////////////////////////////
-
-        //        put("test.txt", new_socket_fd);
-        
     }
+
     return 0;
 }
