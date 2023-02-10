@@ -13,21 +13,16 @@
 
 #include "asgn2_helper_funcs.h"
 
-#define MAX_REQUEST 2048
-#define MAX_BUF     4096
-#define MAX_RESPONSE                                                                               \
-    200 // since the longest resonse without message could have max 185 bytes, using 200 just to be careful
+#define MAX_REQUEST  2048
+#define MAX_BUF      4096
+#define MAX_RESPONSE 200 // since the longest resonse without message could have max 185 bytes, using 200 just to be careful
 #define MAX_PHRASE 22 // since the longest status phrase has 22 bytes
-
 ////// Request Line Regex
-#define METHOD "([a-zA-Z]{1,8})" // character range [a-zA-Z] at most 8 characters
-#define URI                                                                                        \
-    "([a-zA-Z0-9.-]{1,63})" // characte range [a-zA-Z0-9.-] and at least 2 characters and at most 64 characters
-#define VERSIONX "([0-9]{1})" // HTTP/VERSIONX.VERSIONY
-#define VERSIONY "([0-9]{1})"
-#define REQUEST_LINE                                                                               \
-    "^" METHOD " "                                                                                 \
-    "/" URI " HTTP/" VERSIONX "." VERSIONY
+#define METHOD       "([a-zA-Z]{1,8})" // character range [a-zA-Z] at most 8 characters
+#define URI          "([a-zA-Z0-9.-]{1,63})" // characte range [a-zA-Z0-9.-] and at least 2 characters and at most 64 characters
+#define VERSIONX     "([0-9]{1})" // HTTP/VERSIONX.VERSIONY
+#define VERSIONY     "([0-9]{1})"
+#define REQUEST_LINE "^" METHOD " " "/" URI " HTTP/" VERSIONX "." VERSIONY
 
 ////// Header-field Regex
 #define KEY          "([a-zA-Z0-9.-]{1,128})" // character range words, numbers, . and -
