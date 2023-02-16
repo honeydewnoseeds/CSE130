@@ -62,7 +62,20 @@ void queue_delete(queue_t **q) {
  *  @return A bool indicating success or failure.  Note, the function
  *          should succeed unless the q parameter is NULL.
  */
-bool queue_push(queue_t *q, void *elem);
+bool queue_push(queue_t *q, void *elem) {
+    // if q is NULL
+    if (q == NULL) {
+        return false;
+    }
+    // if the array is full
+    if (q->length == q->size) {
+        // should use thread here
+    }
+    q->back = ((q->back)+1) % (q->size);
+    q->elem[q->back] = elem;
+    q->length++;
+    return true;
+}
 
 /** @brief pop an element from a queue.
  *
@@ -73,4 +86,15 @@ bool queue_push(queue_t *q, void *elem);
  *  @return A bool indicating success or failure.  Note, the function
  *          should succeed unless the q parameter is NULL.
  */
-bool queue_pop(queue_t *q, void **elem);
+bool queue_pop(queue_t *q, void **elem) {
+    if (q == NULL) {
+        return false;
+    }
+    if (q->length == 0) {
+        // should use thread here
+    }
+    elem = q->elem[q->front];
+    q->front = ((q->front) + 1) % (q->size);
+    q->length--;
+    return true;
+}
