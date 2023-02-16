@@ -5,7 +5,6 @@ CC             = clang
 REMOVE         = rm -f
 
 all : queue.o 
-	$(CC) -c queue.c 
 
 queue.o : $(BASE_OBJECTS) $(HEADERS)
 	$(CC) $(COMPILE) -c $(BASE_OBJECTS)
