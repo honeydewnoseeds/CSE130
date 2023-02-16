@@ -7,12 +7,11 @@
 
 typedef struct queue {
     int length; // number of items in the queue
-    int size;   // actual compacity of the queue
-    int front;  // the front of the queue
-    int back;   // the back of the queue
+    int size; // actual compacity of the queue
+    int front; // the front of the queue
+    int back; // the back of the queue
     void *elem; // the elements
 }queue;
-
 
 /** @brief Dynamically allocates and initializes a new queue with a
  *         maximum size, size
@@ -21,14 +20,13 @@ typedef struct queue {
  *
  *  @return a pointer to a new queue_t
  */
-queue_t *queue_new(int size){
-    queue_t Q;
-    Q = malloc(sizeof(queue));
+queue_t *queue_new(int size) {
+    queue_t *Q = malloc(sizeof(queue));
     if (Q == NULL) {
         fprintf(stderr, "failed to create new queue in queue_new()\n");
         exit(1);
     }
-    Q->elem = calloc(size, sizeof(void *));
+    Q->elem = (void**) calloc(size, sizeof(void *));
     if (Q->elem == NULL) {
         fprintf(stderr, "failed to allocte for elem in queue_new()\n");
         exit(1);
@@ -47,14 +45,13 @@ queue_t *queue_new(int size){
  *  *q = NULL after deallocation).
  *
  */
-void queue_delete(queue_t **q){
+void queue_delete(queue_t **q) {
     if (q != NULL && *q != NULL) {
         free((*q)->elem);
         free(*q);
         *q = NULL;
     }
 }
-
 
 /** @brief push an element onto a queue
  *
@@ -67,7 +64,6 @@ void queue_delete(queue_t **q){
  */
 bool queue_push(queue_t *q, void *elem);
 
-
 /** @brief pop an element from a queue.
  *
  *  @param q the queue to pop an element from.
@@ -78,4 +74,3 @@ bool queue_push(queue_t *q, void *elem);
  *          should succeed unless the q parameter is NULL.
  */
 bool queue_pop(queue_t *q, void **elem);
-

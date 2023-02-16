@@ -1,4 +1,4 @@
-BASE_SOURCES   = queue.c
+BASE_OBJECTS   = queue.c
 HEADERS        = queue.h
 COMPILE        = -Wall -Wpedantic -Werror -Wextra
 CC             = clang
