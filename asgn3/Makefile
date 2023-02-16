@@ -8,7 +8,7 @@ all : queue.o
 	$(CC) -o queue queue.o 
 
 queue.o : $(BASE_SOURCES) $(HEADERS)
-	$(CC) $(COMPILE) -c $(BASE_SOURCES)
+	$(CC) $(COMPILE) -c $(BASE_OBJECTS)
 
 clean :
 	$(REMOVE) queue queue.o
