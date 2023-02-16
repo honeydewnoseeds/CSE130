@@ -5,13 +5,13 @@ CC             = clang
 REMOVE         = rm -f
 
 all : queue.o 
-	$(CC) -o queue queue.o 
+	$(CC) -c queue.c 
 
-queue.o : $(BASE_SOURCES) $(HEADERS)
+queue.o : $(BASE_OBJECTS) $(HEADERS)
 	$(CC) $(COMPILE) -c $(BASE_OBJECTS)
 
 clean :
-	$(REMOVE) queue queue.o
+	$(REMOVE) queue.o
 
 format :
 	clang-format -i -style=file *.[ch]
