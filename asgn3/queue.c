@@ -15,6 +15,9 @@ typedef struct queue {
     int front; // the front of the queue
     int back; // the back of the queue
     void **elem; // the elements
+    pthread_mutex_t mutex;
+    pthread_cond_t cv_pop;
+    pthread_cond_t cv_push;
 } queue;
 
 /** @brief Dynamically allocates and initializes a new queue with a
@@ -35,6 +38,13 @@ queue_t *queue_new(int size) {
         fprintf(stderr, "failed to allocte for elem in queue_new()\n");
         exit(1);
     }
+    int rc;
+    rc = pthread_mutex_init(&(Q->mutex), NULL);
+    assert(!rc);
+    rc = pthread_cond_init(&(Q->cv_pop), NULL);
+    assert(!rc);
+    rc = pthread_cond_init(&(Q->cv_push), NULL);
+    assert(!rc);
     Q->length = 0;
     Q->size = size;
     Q->front = 0;
@@ -51,6 +61,14 @@ queue_t *queue_new(int size) {
  */
 void queue_delete(queue_t **q) {
     if (q != NULL && *q != NULL) {
+        int rc;
+        rc = pthread_mutex_destroy(&((*q)->mutex));
+        assert(!rc);
+        rc = pthread_cond_destroy(&((*q)->cv_pop));
+        assert(!rc);
+        rc = pthread_cond_destroy(&((*q)->cv_push));
+        assert(!rc);
+
         free((*q)->elem);
         free(*q);
         *q = NULL;
@@ -73,11 +91,14 @@ bool queue_push(queue_t *q, void *elem) {
     }
     // if the array is full
     while (q->length == q->size) {
-        // should use thread here
+        pthread_cond_wait(&(q->cv_pop), &(q->mutex));
     }
+    pthread_mutex_lock(&(q->mutex));
     q->back = ((q->back) + 1) % (q->size);
     q->elem[q->back] = elem;
     q->length++;
+    pthread_mutex_unlock(&(q->mutex));
+    pthread_cond_signal(&(q->cv_push));
     return true;
 }
 
@@ -95,8 +116,9 @@ bool queue_pop(queue_t *q, void **elem) {
         return false;
     }
     while (q->length == 0) {
-        // should use thread here
+        pthread_cond_wait(&(q->cv_push), &(q->mutex));
     }
+    pthread_mutex_lock(&(q->mutex));
     *elem = q->elem[q->front];
     if (elem == NULL) {
         fprintf(stderr, "something's wrong\n");
@@ -104,5 +126,7 @@ bool queue_pop(queue_t *q, void **elem) {
     }
     q->front = ((q->front) + 1) % (q->size);
     q->length--;
+    pthread_mutex_unlock(&(q->mutex));
+    pthread_cond_signal(&(q->cv_pop));
     return true;
 }
