@@ -3,6 +3,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <sys/types.h>
+#include <assert.h>
+#include <pthread.h>
+#include <unistd.h>
+
 #include "queue.h"
 
 typedef struct queue {
@@ -10,8 +14,8 @@ typedef struct queue {
     int size; // actual compacity of the queue
     int front; // the front of the queue
     int back; // the back of the queue
-    void *elem; // the elements
-}queue;
+    void **elem; // the elements
+} queue;
 
 /** @brief Dynamically allocates and initializes a new queue with a
  *         maximum size, size
@@ -26,7 +30,7 @@ queue_t *queue_new(int size) {
         fprintf(stderr, "failed to create new queue in queue_new()\n");
         exit(1);
     }
-    Q->elem = (void**) calloc(size, sizeof(void *));
+    Q->elem = (void **) calloc(size, sizeof(void *));
     if (Q->elem == NULL) {
         fprintf(stderr, "failed to allocte for elem in queue_new()\n");
         exit(1);
@@ -64,14 +68,14 @@ void queue_delete(queue_t **q) {
  */
 bool queue_push(queue_t *q, void *elem) {
     // if q is NULL
-    if (q == NULL) {
+    if (q == NULL || elem == NULL) {
         return false;
     }
     // if the array is full
-    if (q->length == q->size) {
+    while (q->length == q->size) {
         // should use thread here
     }
-    q->back = ((q->back)+1) % (q->size);
+    q->back = ((q->back) + 1) % (q->size);
     q->elem[q->back] = elem;
     q->length++;
     return true;
@@ -90,10 +94,14 @@ bool queue_pop(queue_t *q, void **elem) {
     if (q == NULL) {
         return false;
     }
-    if (q->length == 0) {
+    while (q->length == 0) {
         // should use thread here
     }
-    elem = q->elem[q->front];
+    *elem = q->elem[q->front];
+    if (elem == NULL) {
+        fprintf(stderr, "something's wrong\n");
+        exit(1);
+    }
     q->front = ((q->front) + 1) % (q->size);
     q->length--;
     return true;
