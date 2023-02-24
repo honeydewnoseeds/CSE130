@@ -90,14 +90,17 @@ bool queue_push(queue_t *q, void *elem) {
         return false;
     }
     // if the array is full
+    pthread_mutex_lock(&(q->mutex));
     while (q->length == q->size) {
+        fprintf(stdout, "waiting since queu is full....\n");
         pthread_cond_wait(&(q->cv_pop), &(q->mutex));
     }
-    pthread_mutex_lock(&(q->mutex));
+    fprintf(stdout, "pushing....\n");
     q->back = ((q->back) + 1) % (q->size);
     q->elem[q->back] = elem;
     q->length++;
     pthread_mutex_unlock(&(q->mutex));
+    fprintf(stdout, "done...\n");
     pthread_cond_signal(&(q->cv_push));
     return true;
 }
@@ -115,10 +118,12 @@ bool queue_pop(queue_t *q, void **elem) {
     if (q == NULL) {
         return false;
     }
+    pthread_mutex_lock(&(q->mutex));
     while (q->length == 0) {
+        fprintf(stdout, "waiting since queue is empty....\n");
         pthread_cond_wait(&(q->cv_push), &(q->mutex));
     }
-    pthread_mutex_lock(&(q->mutex));
+    fprintf(stdout, "poping....\n");
     *elem = q->elem[q->front];
     if (elem == NULL) {
         fprintf(stderr, "something's wrong\n");
@@ -127,6 +132,7 @@ bool queue_pop(queue_t *q, void **elem) {
     q->front = ((q->front) + 1) % (q->size);
     q->length--;
     pthread_mutex_unlock(&(q->mutex));
+    fprintf(stdout, "done...\n");
     pthread_cond_signal(&(q->cv_pop));
     return true;
 }
