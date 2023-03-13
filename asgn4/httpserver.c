@@ -46,7 +46,7 @@ int main(int argc, char **argv) {
     signal(SIGPIPE, SIG_IGN);
     Listener_Socket sock;
     listener_init(&sock, port);
-    
+
     // intializing errno
     errno = 0;
 
@@ -61,10 +61,10 @@ int main(int argc, char **argv) {
 }
 
 void handle_connection(int connfd) {
-    
+
     // creates a new connection
     conn_t *conn = conn_new(connfd);
-    
+
     // res is NULL when data from client is correctly formated
     // else res points to a response that should be sent to client
     const Response_t *res = conn_parse(conn);
@@ -72,7 +72,7 @@ void handle_connection(int connfd) {
     // if the message is ill-formatted
     if (res != NULL) {
         conn_send_response(conn, res);
-    // if the message is correctly formatted
+        // if the message is correctly formatted
     } else {
         // not sure what this does
         debug("%s", conn_str(conn));
@@ -81,10 +81,10 @@ void handle_connection(int connfd) {
         // if request is get
         if (req == &REQUEST_GET) {
             handle_get(conn);
-        // else if the requst is put
+            // else if the requst is put
         } else if (req == &REQUEST_PUT) {
             handle_put(conn);
-        // else the request is unsupported
+            // else the request is unsupported
         } else {
             handle_unsupported(conn);
         }
@@ -113,15 +113,15 @@ void handle_get(conn_t *conn) {
         debug("%s: %d", uri, errno);
         if (errno == EACCES) {
             res = &RESPONSE_FORBIDDEN;
-        }else if (errno == ENOENT) {
+        } else if (errno == ENOENT) {
             res = &RESPONSE_NOT_FOUND;
-        }else{
-        // could trigger because it's a directory?
+        } else {
+            // could trigger because it's a directory?
             res = &RESPONSE_INTERNAL_SERVER_ERROR;
         }
-         conn_send_response(conn, res);
-         return;
-   }
+        conn_send_response(conn, res);
+        return;
+    }
 
     // 2. Get the size of the file.
     // (hint: checkout the function fstat)!
@@ -132,7 +132,8 @@ void handle_get(conn_t *conn) {
     // 3. Check if the file is a directory, because directories *will*
     // open, but are not valid.
     // (hint: checkout the macro "S_IFDIR", which you can use after you call fstat!)
-    if (buffer.st_mode == S_IFDIR) {
+    if (S_ISDIR(buffer.st_mode)) {
+        fprintf(stdout, "it's a directory!\n");
         res = &RESPONSE_FORBIDDEN;
         conn_send_response(conn, res);
         return;
@@ -141,7 +142,6 @@ void handle_get(conn_t *conn) {
     // 4. Send the file
     // (hint: checkout the conn_send_file function!)
     res = &RESPONSE_OK;
-    conn_send_response(conn, res);
     conn_send_file(conn, file_fd, size);
     close(file_fd);
 }
