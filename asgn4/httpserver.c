@@ -8,6 +8,7 @@
 #include "debug.h"
 #include "response.h"
 #include "request.h"
+#include "queue.h"
 
 #include <err.h>
 #include <errno.h>
@@ -17,10 +18,13 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
-
+#include <pthread.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 
-void handle_connection(int);
+queue_t *q = NULL;
+
+void *handle_connection();
 
 void handle_get(conn_t *);
 void handle_put(conn_t *);
@@ -42,6 +46,17 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
+    // default number of worker thread is 4
+    int num_thread = 4;
+    // if there's more than 2 arguments, check if the second argument is valid #
+    if (argc <= 3) {
+        num_thread = atoi(argv[2]);
+        // if not valid #, number of worker thread default back to 4
+        if (num_thread == 0) {
+            num_thread = 4;
+        }
+    }
+
     // initializing sockets for port
     signal(SIGPIPE, SIG_IGN);
     Listener_Socket sock;
@@ -50,47 +65,67 @@ int main(int argc, char **argv) {
     // intializing errno
     errno = 0;
 
+    // new queue
+    // size = num_thread
+    q = queue_new(num_thread);
+
+    // an array of threads with size = size of threads indicated
+    pthread_t threads[num_thread];
+    // initializing each worker thread
+    for (int i = 0; i < num_thread; i++) {
+        pthread_create(&threads[i], NULL, handle_connection, NULL);
+    }
+
     // Listener
     while (1) {
-        int connfd = listener_accept(&sock);
-        handle_connection(connfd);
-        close(connfd);
+        uintptr_t connfd = listener_accept(&sock);
+        queue_push(q, (void *) connfd);
+        //close(connfd);
     }
 
     return EXIT_SUCCESS;
 }
 
-void handle_connection(int connfd) {
+void *handle_connection() {
+    // worker thread
+    while (1) {
+        // creates a new connection
+        uintptr_t connfd;
+        // pops from q to get connfd
+        // if q empty, worker thread get block
+        queue_pop(q, (void **) &connfd);
+        // creating new connection
+        conn_t *conn = conn_new(connfd);
 
-    // creates a new connection
-    conn_t *conn = conn_new(connfd);
+        // res is NULL when data from client is correctly formated
+        // else res points to a response that should be sent to client
+        const Response_t *res = conn_parse(conn);
 
-    // res is NULL when data from client is correctly formated
-    // else res points to a response that should be sent to client
-    const Response_t *res = conn_parse(conn);
-
-    // if the message is ill-formatted
-    if (res != NULL) {
-        conn_send_response(conn, res);
-        // if the message is correctly formatted
-    } else {
-        // not sure what this does
-        debug("%s", conn_str(conn));
-        // returns request from parsing data from connections
-        const Request_t *req = conn_get_request(conn);
-        // if request is get
-        if (req == &REQUEST_GET) {
-            handle_get(conn);
-            // else if the requst is put
-        } else if (req == &REQUEST_PUT) {
-            handle_put(conn);
-            // else the request is unsupported
+        // if the message is ill-formatted
+        if (res != NULL) {
+            conn_send_response(conn, res);
+            // if the message is correctly formatted
         } else {
-            handle_unsupported(conn);
+            // not sure what this does
+            debug("%s", conn_str(conn));
+            // returns request from parsing data from connections
+            const Request_t *req = conn_get_request(conn);
+            // if request is get
+            if (req == &REQUEST_GET) {
+                handle_get(conn);
+                // else if the requst is put
+            } else if (req == &REQUEST_PUT) {
+                handle_put(conn);
+                // else the request is unsupported
+            } else {
+                handle_unsupported(conn);
+            }
         }
-    }
 
-    conn_delete(&conn);
+        conn_delete(&conn);
+        close(connfd);
+    }
+    return NULL;
 }
 
 void handle_get(conn_t *conn) {
@@ -123,6 +158,9 @@ void handle_get(conn_t *conn) {
         return;
     }
 
+    // locks
+    flock(file_fd, LOCK_SH);
+
     // 2. Get the size of the file.
     // (hint: checkout the function fstat)!
     struct stat buffer;
@@ -136,6 +174,7 @@ void handle_get(conn_t *conn) {
         fprintf(stdout, "it's a directory!\n");
         res = &RESPONSE_FORBIDDEN;
         conn_send_response(conn, res);
+        close(file_fd);
         return;
     }
 
@@ -143,6 +182,7 @@ void handle_get(conn_t *conn) {
     // (hint: checkout the conn_send_file function!)
     res = &RESPONSE_OK;
     conn_send_file(conn, file_fd, size);
+    //flock(file_fd, LOCK_UN);
     close(file_fd);
 }
 
@@ -169,13 +209,17 @@ void handle_put(conn_t *conn) {
         debug("%s: %d", uri, errno);
         if (errno == EACCES || errno == EISDIR || errno == ENOENT) {
             res = &RESPONSE_FORBIDDEN;
-            goto out;
+            conn_send_response(conn, res);
+            return;
         } else {
             res = &RESPONSE_INTERNAL_SERVER_ERROR;
-            goto out;
+            conn_send_response(conn, res);
+            return;
         }
     }
-
+    // lock
+    flock(fd, LOCK_EX);
+    // write data from the connection to the file fd
     res = conn_recv_file(conn, fd);
 
     if (res == NULL && existed) {
@@ -183,9 +227,7 @@ void handle_put(conn_t *conn) {
     } else if (res == NULL && !existed) {
         res = &RESPONSE_CREATED;
     }
-
-    close(fd);
-
-out:
     conn_send_response(conn, res);
+    //flock(fd, LOCK_UN);
+    close(fd);
 }
