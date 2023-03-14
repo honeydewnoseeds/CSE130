@@ -204,11 +204,9 @@ void handle_get(conn_t *conn) {
     res = &RESPONSE_OK;
     conn_send_file(conn, file_fd, size);
     //flock(file_fd, LOCK_UN);
-    close(file_fd);
-    if (res == NULL) {
-        fprintf(stdout, "res is null\n");
-    }
     audit(conn, res);
+    close(file_fd);
+    //audit(conn, res);
 }
 
 void handle_unsupported(conn_t *conn) {
@@ -264,6 +262,7 @@ void handle_put(conn_t *conn) {
         res = &RESPONSE_CREATED;
     }
     conn_send_response(conn, res);
-    close(fd);
     audit(conn, res);
+    close(fd);
+    // audit(conn, res);
 }
