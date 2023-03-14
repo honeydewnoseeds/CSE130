@@ -23,6 +23,8 @@
 #include <sys/file.h>
 #include <sys/stat.h>
 
+#define OPTIONS "t:"
+
 queue_t *q = NULL;
 pthread_mutex_t mutex;
 
@@ -39,20 +41,11 @@ void audit(conn_t *conn, const Response_t *res) {
     const char *oper = request_get_str(req);
     uint16_t code = response_get_code(res);
     char *id = conn_get_header(conn, "Request-Id");
-    /*
-    if (req == &REQUEST_GET) {
-        oper = "GET";
-    }else if (req == &REQUEST_PUT) {
-        oper = "PUT";
-    }else {
-        oper = "UNSUPPORTED";
-    }*/
 
     fprintf(stderr, "%s,%s,%hu,%s\n", oper, URI, code, id);
 }
 
 int main(int argc, char **argv) {
-
     // verify the format of the arguments
     if (argc < 2) {
         warnx("wrong arguments: %s port_num", argv[0]);
@@ -60,26 +53,22 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
-    // checking port number
-    char *endptr = NULL;
-    size_t port = (size_t) strtoull(argv[1], &endptr, 10);
-    if (endptr && *endptr != '\0') {
-        warnx("invalid port number: %s", argv[1]);
-        return EXIT_FAILURE;
-    }
-
     // default number of worker thread is 4
     int num_thread = 4;
-    // if there's more than 2 arguments, check if the second argument is valid #
-    if (argc >= 3) {
-        num_thread = atoi(argv[2]);
-        // if not valid #, number of worker thread default back to 4
-        if (num_thread == 0) {
-            num_thread = 4;
+    int opt;
+    while ((opt = getopt(argc, argv, OPTIONS)) != -1) {
+        switch (opt) {
+        case 't': num_thread = strtoul(optarg, NULL, 10); break;
         }
     }
 
-    fprintf(stdout, "hrer1\n");
+    if (optind >= argc) {
+        fprintf(stderr, "Expected argument after options\n");
+        return EXIT_FAILURE;
+    }
+
+    size_t port = (size_t) strtoull(argv[optind], NULL, 10);
+
     // initializing sockets for port
     signal(SIGPIPE, SIG_IGN);
     Listener_Socket sock;
@@ -156,7 +145,6 @@ void *handle_connection() {
 }
 
 void handle_get(conn_t *conn) {
-    fprintf(stdout, "in get\n");
     // retrieves the URI
     char *uri = conn_get_uri(conn);
     //debug("GET request not implemented. But, we want to get %s", uri);
@@ -204,7 +192,6 @@ void handle_get(conn_t *conn) {
     // open, but are not valid.
     // (hint: checkout the macro "S_IFDIR", which you can use after you call fstat!)
     if (S_ISDIR(buffer.st_mode)) {
-        fprintf(stdout, "it's a directory!\n");
         res = &RESPONSE_FORBIDDEN;
         conn_send_response(conn, res);
         close(file_fd);
