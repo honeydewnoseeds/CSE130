@@ -37,5 +37,5 @@ and pushes the connection file descriptor onto a queue (bounded buffer from assi
 Both worker and dispatcher are working indefinately until connection is closed. When each worker thread process a request, a corresponding audit log will be send to stderr
 in the format of: 
 
-<Oper>,<URI>,(Status-Code>,<RequestID header value>\n
+[Oper],[URI],[Status-Code],[RequestID header value]\n
 
